@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <script src="d3.js"></script>
+    <script src="d3-lasso.js"></script>
+    <style>
+        circle {
+            fill-opacity: 0.5;
+        }
+
+        .lasso path {
+            stroke: rgb(80, 80, 80);
+            stroke-width: 2px;
+        }
+
+        .lasso .drawn {
+            fill-opacity: .05;
+        }
+
+        .lasso .loop_close {
+            fill: none;
+            stroke-dasharray: 4, 4;
+        }
+
+        .lasso .origin {
+            fill: #3399FF;
+            fill-opacity: .5;
+        }
+
+        .not_possible {
+            fill: rgb(200, 200, 200);
+        }
+
+        .possible {
+            fill: #EC888C;
+        }
+
+        .selected {
+            fill: steelblue;
+        }
+
+    </style>
+</head>
+<body>
+
+</body>
+
+<script>
+    let flag_flag = true;
+    let circles = null
+    let lasso_config = null, zoom_config = null;
+    let k = 1, radius = 3.5;
+
+
+    let margin = {top: 20, right: 20, bottom: 30, left: 40},
+        width = window.innerWidth - margin.left - margin.right,
+        height = window.innerHeight - margin.top - margin.bottom,
+
+        scaleX = d3.scaleLinear().range([0, width]),
+        scaleY = d3.scaleLinear().range([height, 0]),
+        colorScale = d3.scaleOrdinal(d3.schemeCategory10)
+    let svg = d3.select("body").append("svg").attr("width", width).attr("height", height)
+    // clipping path to use in zoom able view
+    svg.append("defs")
+        .append("clipPath")
+        .attr("id", "chart")
+        .append("rect")
+        .attr("width", width)
+        .attr("height", height)
+
+    // all element are added to this object
+    const chart = svg.append("g").attr("transform", `translate(${[margin.left, margin.top]})`)
+
+    // the zoom able parts are added to this object
+    const view = chart.append("g").attr("class", "view").attr("clip-path", "url(#chart)").append("g")    // the clipped zoom able object
+
+    let currentZoom = d3.zoomIdentity
+    const extent = [[0, 0], [width, height]]
+
+    d3.csv("data.csv").then(function (data) {
+        data.forEach(function (d) {
+            d.sepalLength = +d.sepalLength
+            d.sepalWidth = +d.sepalWidth
+        });
+
+        scaleX.domain(d3.extent(data, d => d.sepalWidth)).nice()
+        scaleY.domain(d3.extent(data, d => d.sepalLength)).nice()
+
+        circles = view.selectAll(".dot").data(data)
+            .join("circle")
+            .attr("id", (d, i) => "dot_" + i)
+            .attr("class", "dot")
+            .attr("r", radius / k)
+            .attr("cx", d => scaleX(d.sepalWidth))
+            .attr("cy", d => scaleY(d.sepalLength))
+            .style("fill", d => colorScale(d.species))
+        console.log("load data......")
+        document.addEventListener("keydown", watchEnter)
+    })
+
+
+    // lasso start
+    function lasso_start() {
+        console.log("lasso_start", "  k ", k, "  radius ", radius)
+        lasso_config.items()
+            .attr("r", radius / k) // reset size
+            .classed("not_possible", true)
+            .style("fill", null)
+            .classed("selected", false);
+    }
+
+    function lasso_draw() {
+        console.log("lasso_draw")
+        lasso_config.possibleItems().classed("not_possible", false).classed("possible", true);
+        lasso_config.notPossibleItems().classed("not_possible", true).classed("possible", false);
+    }
+
+    function lasso_end() {
+        console.log("lasso_end");
+        // Reset the color of all dots
+        lasso_config.items().style("fill", d => colorScale(d.species)).classed("not_possible", false).classed("possible", false);
+        // Style the selected dots
+        lasso_config.selectedItems().classed("selected", true).attr("r", radius * 2 / k);
+        // Reset the style of the not selected dots
+        lasso_config.notSelectedItems().attr("r", radius / k);
+    }
+
+
+    function zooming() {
+
+        console.log("zooming ", "  k ", k, "  radius ", radius)
+        currentZoom = d3.event.transform
+        k = currentZoom.k
+        view.attr("transform", currentZoom)
+        d3.selectAll("circle.dot").attr("r", radius / k)
+    }
+
+    function zoomEnd() {
+        if (d3.event.transform.k <= 1 + 1e-6)
+            d3.select("#zoom-reset").style("opacity", 0)
+        else
+            d3.select("#zoom-reset").style("opacity", 1)
+    }
+
+
+    function watchEnter(e) {
+        if (e) {
+            if (e.keyCode === 17) { // ctrl
+                console.log("zoom event ......")
+                lasso_config = d3.lasso().closePathSelect(true).closePathDistance(100).items(circles).targetArea(svg).on("start", null).on("draw", null).on("end", null)
+                //lasso_config = null
+                zoom_config = d3.zoom().scaleExtent([1, 5]).extent(extent).translateExtent(extent).on("zoom", zooming).on("end", zoomEnd)
+                svg.call(zoom_config)
+            }
+
+            if (e.keyCode === 16) { // shift
+                console.log("lasso event ......")
+                //zoom_config = d3.zoom().scaleExtent([1, 5]).extent(extent).translateExtent(extent).on("zoom", null).on("end", null)
+                //svg.call(zoom_config)
+                lasso_config = d3.lasso().closePathSelect(true).closePathDistance(100).items(circles).targetArea(svg).on("start", lasso_start).on("draw", lasso_draw).on("end", lasso_end)
+                svg.call(lasso_config)
+            }
+        }
+    }
+</script>
+</html>
